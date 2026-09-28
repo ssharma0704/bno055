@@ -29,6 +29,7 @@
 
 import sys
 import threading
+import time
 
 from bno055.connectors.i2c import I2C
 from bno055.connectors.uart import UART
@@ -84,6 +85,7 @@ class Bno055Node(Node):
 
 
 def main(args=None):
+    node = None
     try:
         """Main entry method for this ROS2 node."""
         # Initialize ROS Client Libraries (RCL) for Python:
@@ -91,7 +93,17 @@ def main(args=None):
 
         # Create & initialize ROS2 node:
         node = Bno055Node()
-        node.setup()
+        setup_attempts = 6
+        for i in range(setup_attempts):
+            try:
+                node.setup()
+                break
+            except Exception as e:  # noqa: B902
+                node.get_logger().warn(
+                    'IMU setup attempt %d/%d failed: %s' % (i + 1, setup_attempts, e))
+                time.sleep(2.0)
+        else:
+            raise RuntimeError('BNO055 setup failed after %d attempts' % setup_attempts)
 
         # Create lock object to prevent overlapping data queries
         lock = threading.Lock()
@@ -155,17 +167,22 @@ def main(args=None):
         rclpy.spin(node)
 
     except KeyboardInterrupt:
-        node.get_logger().info('Ctrl+C received - exiting...')
+        if node is not None:
+            node.get_logger().info('Ctrl+C received - exiting...')
         sys.exit(0)
     finally:
-        node.get_logger().info('ROS node shutdown')
+        if node is not None:
+            node.get_logger().info('ROS node shutdown')
+            try:
+                node.destroy_timer(data_query_timer)
+                node.destroy_timer(status_timer)
+            except UnboundLocalError:
+                node.get_logger().info('No timers to shutdown')
+            node.destroy_node()
         try:
-            node.destroy_timer(data_query_timer)
-            node.destroy_timer(status_timer)
-        except UnboundLocalError:
-            node.get_logger().info('No timers to shutdown')
-        node.destroy_node()
-        rclpy.shutdown()
+            rclpy.shutdown()
+        except Exception:  # noqa: B902
+            pass
 
 
 if __name__ == '__main__':
