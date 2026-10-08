@@ -55,10 +55,15 @@ class Bno055Node(Node):
     def __init__(self):
         # Initialize parent (ROS Node)
         super().__init__('bno055')
+        # declared once: re-declaring them makes a setup retry fail for the wrong reason
+        self.param = NodeParameters(self)
+        self.sensor = None
 
     def setup(self):
-        # Initialize ROS2 Node Parameters:
-        self.param = NodeParameters(self)
+        # built once, so a retry does not create a second set of publishers
+        if self.sensor is not None:
+            self.sensor.configure()
+            return
 
         # Get connector according to configured sensor connection type:
         if self.param.connection_type.value == UART.CONNECTIONTYPE_UART:
