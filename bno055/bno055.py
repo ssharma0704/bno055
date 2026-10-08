@@ -113,8 +113,14 @@ def main(args=None):
         # Create lock object to prevent overlapping data queries
         lock = threading.Lock()
 
+        # a sensor that has gone away fails every read: exit after about 3 s of them so
+        # the service can reset the port and start us again
+        max_failures = max(5, int(3 * node.param.data_query_frequency.value))
+        failures = 0
+
         def read_data():
             """Periodic data_query_timer executions to retrieve sensor IMU data."""
+            nonlocal failures
             if lock.locked():
                 # critical area still locked
                 # that means that the previous data query is still being processed
@@ -133,8 +139,16 @@ def main(args=None):
                 # division by zero in get_sensor_data, return
                 return
             except Exception as e:  # noqa: B902
-                node.get_logger().warn('Receiving sensor data failed with %s:"%s"'
-                                       % (type(e).__name__, e))
+                failures += 1
+                node.get_logger().warn('Receiving sensor data failed with %s:"%s" (%d/%d)'
+                                       % (type(e).__name__, e, failures, max_failures))
+                if failures >= max_failures:
+                    node.get_logger().error(
+                        'No sensor data for %d consecutive reads: exiting so the port can '
+                        'be reset and this node started again' % failures)
+                    raise SystemExit(1)
+            else:
+                failures = 0
             finally:
                 lock.release()
 
