@@ -140,8 +140,11 @@ def main(args=None):
                 return
             except Exception as e:  # noqa: B902
                 failures += 1
-                node.get_logger().warn('Receiving sensor data failed with %s:"%s" (%d/%d)'
-                                       % (type(e).__name__, e, failures, max_failures))
+                # a run of failures is one event, not hundreds: report its start, a
+                # heartbeat while it lasts, and the last read before giving up
+                if failures == 1 or failures % 50 == 0 or failures == max_failures:
+                    node.get_logger().warn('Receiving sensor data failed with %s:"%s" (%d/%d)'
+                                           % (type(e).__name__, e, failures, max_failures))
                 if failures >= max_failures:
                     node.get_logger().error(
                         'No sensor data for %d consecutive reads: exiting so the port can '
